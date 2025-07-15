@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ควบคุม LED ด้วย Firestore</title>
+    <!-- โหลด Tailwind CSS เพื่อความสวยงาม -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* กำหนด font และสไตล์เพิ่มเติม */
+        body {
+            font-family: 'Sarabun', sans-serif;
+        }
+        .led {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+            border: 4px solid #4a5568;
+        }
+        .led-off {
+            background-color: #718096; /* สีเทาตอนปิด */
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.4);
+        }
+        .led-on {
+            background-color: #48bb78; /* สีเขียวตอนเปิด */
+            box-shadow: 0 0 20px #48bb78, 0 0 30px #48bb78, inset 0 0 10px #f0fff4;
+        }
+        .control-button {
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+        .control-button:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="bg-gray-800 text-white flex items-center justify-center min-h-screen">
+
+    <div class="container mx-auto p-6 bg-gray-900 rounded-2xl shadow-2xl max-w-sm text-center border border-gray-700">
+        <h1 class="text-3xl font-bold mb-6">ระบบควบคุม LED</h1>
+        
+        <!-- ส่วนแสดงผล LED -->
+        <div class="flex justify-center mb-8">
+            <div id="led" class="led led-off"></div>
+        </div>
+
+        <!-- ปุ่มสำหรับเปิด-ปิด -->
+        <button id="toggleButton" class="control-button w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 rounded-lg text-xl font-bold focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50">
+            กำลังโหลด...
+        </button>
+
+        <p id="statusText" class="mt-4 text-gray-400">กำลังเชื่อมต่อกับ Firestore...</p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // นำเข้าฟังก์ชันที่จำเป็นจาก Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 1. การตั้งค่า Firebase (ใช้ข้อมูลที่คุณให้มาโดยตรง)
+        const firebaseConfig = { 
+            apiKey: "AIzaSyAXEZdK3Uo7j5Xvor07M5s_7SJE67eLnyo", 
+            authDomain: "pzx-989e1.firebaseapp.com", 
+            projectId: "pzx-989e1", 
+            storageBucket: "pzx-989e1.firebasestorage.app", 
+            messagingSenderId: "600460952877", 
+            appId: "1:600460952877:web:586b6ade76be6f39413fa4", 
+            measurementId: "G-KWEWWXJMNK" 
+        };
+
+        // 2. เริ่มต้น Firebase (ส่วนที่เหลือของโค้ดไม่ต้องแก้ไข)
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // 3. อ้างอิงไปยัง Element ในหน้าเว็บ
+        const ledElement = document.getElementById('led');
+        const toggleButton = document.getElementById('toggleButton');
+        const statusText = document.getElementById('statusText');
+
+        // 4. กำหนดตำแหน่งที่จะเก็บข้อมูลใน Firestore
+        const ledDocRef = doc(db, "led", "status");
+
+        // 5. ฟังก์ชันสำหรับอัปเดตหน้าเว็บ (UI) ตามสถานะของ LED
+        function updateUI(isLedOn) {
+            if (isLedOn) {
+                ledElement.classList.remove('led-off');
+                ledElement.classList.add('led-on');
+                toggleButton.textContent = 'ปิดไฟ';
+                toggleButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+                toggleButton.classList.add('bg-red-600', 'hover:bg-red-700');
+                statusText.textContent = 'สถานะ: เปิด';
+            } else {
+                ledElement.classList.remove('led-on');
+                ledElement.classList.add('led-off');
+                toggleButton.textContent = 'เปิดไฟ';
+                toggleButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                toggleButton.classList.add('bg-green-600', 'hover:bg-green-700');
+                statusText.textContent = 'สถานะ: ปิด';
+            }
+        }
+
+        // 6. จัดการการคลิกปุ่ม
+        toggleButton.addEventListener('click', async () => {
+            toggleButton.disabled = true;
+            try {
+                const docSnap = await getDoc(ledDocRef);
+                const currentIsOn = docSnap.exists() ? docSnap.data().isOn : false;
+                await setDoc(ledDocRef, { isOn: !currentIsOn });
+            } catch (error) {
+                console.error("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ LED: ", error);
+                statusText.textContent = "เกิดข้อผิดพลาด!";
+            } finally {
+                toggleButton.disabled = false;
+            }
+        });
+
+        // 7. การยืนยันตัวตนและเริ่มฟังข้อมูลแบบ Real-time
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                console.log("User is signed in anonymously:", user.uid);
+                statusText.textContent = "เชื่อมต่อสำเร็จ!";
+
+                // เริ่มฟังการเปลี่ยนแปลงข้อมูลจาก Firestore
+                onSnapshot(ledDocRef, (doc) => {
+                    if (doc.exists()) {
+                        updateUI(doc.data().isOn);
+                    } else {
+                        // ถ้ายังไม่มีข้อมูล ให้สร้างขึ้นมาใหม่โดยมีสถานะเริ่มต้นเป็น 'ปิด'
+                        setDoc(ledDocRef, { isOn: false });
+                    }
+                }, (error) => {
+                    console.error("เกิดข้อผิดพลาดในการฟังข้อมูล: ", error);
+                    statusText.textContent = "เชื่อมต่อ Firestore ไม่ได้";
+                });
+
+            } else {
+                // พยายามลงชื่อเข้าใช้แบบไม่ระบุตัวตน
+                signInAnonymously(auth).catch((error) => {
+                    console.error("Authentication Error:", error);
+                    statusText.textContent = "การยืนยันตัวตนล้มเหลว (โปรดตรวจสอบการตั้งค่าใน Firebase)";
+                });
+            }
+        });
+
+    </script>
+</body>
+</html>
